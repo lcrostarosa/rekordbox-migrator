@@ -34,16 +34,39 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/too
 
 ### 3. Install All Dependencies
 
-Just run:
+**Option A: If you have `make` installed (most common):**
 ```sh
 make deps
 ```
-This will:
-- Check your Python version
-- Install Python (if needed)
-- Install Homebrew (if needed)
-- Install `xmlstarlet` (for advanced features)
-- Make sure everything is ready to go!
+
+**Option B: If you don't have `make` installed:**
+```sh
+# First install make
+brew install make
+
+# Then run the setup
+make deps
+```
+
+**Option C: Manual installation (if you prefer):**
+```sh
+# Install Homebrew (if you don't have it)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install Python and xmlstarlet
+brew install python xmlstarlet
+
+# Make scripts executable
+chmod +x rekordbox_path_updater.py
+chmod +x rekordbox_path_updater.sh
+```
+
+**What this does:**
+- Checks your Python version
+- Installs Python (if needed)
+- Installs Homebrew (if needed)
+- Installs `xmlstarlet` (for advanced features)
+- Makes sure everything is ready to go!
 
 ---
 
