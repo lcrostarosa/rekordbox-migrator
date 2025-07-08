@@ -1,0 +1,14 @@
+# Rekordbox Path Updater - Python Dependencies
+# Note: This script only uses Python standard library modules
+# This file is included for consistency and future extensibility
+
+# Core dependencies (all standard library)
+# xml.etree.ElementTree - XML parsing
+# urllib.parse - URL encoding/decoding
+# os - File system operations
+# sys - System-specific parameters
+# argparse - Command line argument parsing
+# pathlib - Object-oriented filesystem paths
+
+# No external dependencies required!
+# The script uses only Python standard library modules 
