@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DJ_PLAYLISTS Version="1.0.0">
+  <PRODUCT Name="rekordbox" Version="6.8.0.0" Company="AlphaTheta"/>
+  <COLLECTION Entries="3">
+    <TRACK TrackID="1" Name="Test Track 1" Artist="Test Artist" Album="Test Album" Location="file://localhost/C:/Old%20Music/test1.mp3"/>
+    <TRACK TrackID="2" Name="Test Track 2" Artist="Test Artist" Album="Test Album" Location="file://localhost/C:/Old%20Music/test2.mp3"/>
+    <TRACK TrackID="3" Name="Test Track 3" Artist="Test Artist" Album="Test Album" Location="file://localhost/C:/Old%20Music/test3.mp3"/>
+  </COLLECTION>
+</DJ_PLAYLISTS> 

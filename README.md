@@ -82,6 +82,11 @@ make dry-run XML_FILE="rekordbox backup.xml" NEW_PATH="/Volumes/External/Music/"
 make update XML_FILE="rekordbox backup.xml" NEW_PATH="/Volumes/External/Music/"
 ```
 
+**Enable debug logging for troubleshooting:**
+```sh
+make update DEBUG=true XML_FILE="rekordbox backup.xml" NEW_PATH="/Volumes/External/Music/"
+```
+
 **Restore from backup if needed:**
 ```sh
 make restore XML_FILE="rekordbox backup.xml"
@@ -120,6 +125,8 @@ make restore XML_FILE="rekordbox backup.xml"
 | `make install`  | Prepares scripts (run after `make deps`)          |
 | `make dry-run`  | Shows what will change, but does NOT edit files   |
 | `make update`   | Updates your XML file (creates a backup first)    |
+| `make debug`    | Runs with debug logging enabled                   |
+| `make debug-dry-run` | Dry-run with debug logging enabled              |
 | `make restore`  | Restores your XML from the backup                 |
 | `make help`     | Shows all available commands                      |
 
@@ -257,6 +264,12 @@ make dry-run XML_FILE="your_file.xml" NEW_PATH="/your/new/path/"
 # Run the actual update
 make update XML_FILE="your_file.xml" NEW_PATH="/your/new/path/"
 
+# Enable debug logging
+make update DEBUG=true XML_FILE="your_file.xml" NEW_PATH="/your/new/path/"
+
+# Debug mode with dry-run
+make debug-dry-run XML_FILE="your_file.xml" NEW_PATH="/your/new/path/"
+
 # Clean up temporary files
 make clean
 
@@ -273,8 +286,11 @@ rekordbox-editor/
 ├── requirements.txt             # Python dependencies
 ├── rekordbox_path_updater.py   # Python version (recommended)
 ├── rekordbox_path_updater.sh   # Bash version
-├── rekordbox.xml         # Your Rekordbox file
-└── rekordbox.xml.backup  # created after update
+├── resources/
+│   └── test_rekordbox.xml      # Sample Rekordbox XML for testing
+├── tests/
+│   └── debug_hanging.py        # Debug script for file system issues
+└── logs/                       # Log files
 ```
 
 ## ⚠️ Important Notes
@@ -439,6 +455,27 @@ make update XML_FILE="rekordbox backup.xml" NEW_PATH="/new/path/" WORKERS=16
 - **bc** (optional): For better calculations in bash script
 - **nproc/sysctl**: For CPU core detection
 
+### Debug Mode
+For troubleshooting and detailed analysis, use debug mode:
+
+```bash
+# Enable debug logging
+python3 rekordbox_path_updater.py "rekordbox backup.xml" "/new/path/" --debug
+
+# Debug with single-threaded mode
+python3 rekordbox_path_updater.py "rekordbox backup.xml" "/new/path/" --debug --single-thread
+
+# Debug with dry-run
+python3 rekordbox_path_updater.py "rekordbox backup.xml" "/new/path/" --debug --dry-run
+```
+
+**Debug Features:**
+- **File-by-file logging**: Every file processed is logged
+- **Subdirectory tracking**: Shows which subdirectories are being searched
+- **Detailed timing**: Each step is timed and logged
+- **Error tracing**: Complete error paths and causes
+- **Performance metrics**: Detailed processing statistics
+
 ### Performance Tips
 - **Large Libraries**: For libraries with 10,000+ tracks, the smart threading can provide 3-5x speed improvement
 - **SSD vs HDD**: Performance gains are more noticeable on slower storage
@@ -461,6 +498,13 @@ Both scripts now provide detailed logging to help you track and troubleshoot:
 - Error messages with full paths
 - Performance metrics
 - Processing time and statistics
+
+**Debug Log Features:**
+- **File-by-file processing**: Every file is logged with its status
+- **Subdirectory search tracking**: Shows which directories are being searched
+- **Detailed timing**: Each operation is timed
+- **Error tracing**: Complete error paths and stack traces
+- **Performance breakdown**: Detailed statistics for each phase
 
 ### Summary Reports
 Each run generates a comprehensive summary including:

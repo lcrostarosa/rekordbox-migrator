@@ -7,6 +7,7 @@ NEW_PATH ?= "/Volumes/External/Music/"
 WORKERS ?= 8
 PYTHON ?= python3
 PIP ?= pip3
+DEBUG ?= false
 
 # Colors for output
 GREEN = \033[0;32m
@@ -27,7 +28,7 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(YELLOW)%-15s$(NC) %s\n", $$1, $$2}' $(MAKEFILE_LIST) | grep -E "(install|test|setup)"
 	@echo ""
 	@echo "$(GREEN)Main Operations:$(NC)"
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(YELLOW)%-15s$(NC) %s\n", $$1, $$2}' $(MAKEFILE_LIST) | grep -E "(dry-run|update|restore)"
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(YELLOW)%-15s$(NC) %s\n", $$1, $$2}' $(MAKEFILE_LIST) | grep -E "(dry-run|update|restore|debug)"
 	@echo ""
 	@echo "$(GREEN)Utility Commands:$(NC)"
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(YELLOW)%-15s$(NC) %s\n", $$1, $$2}' $(MAKEFILE_LIST) | grep -E "(clean|check|verify)"
@@ -35,6 +36,8 @@ help: ## Show this help message
 	@echo "$(GREEN)Usage Examples:$(NC)"
 	@echo "  make dry-run XML_FILE=\"my_library.xml\" NEW_PATH=\"/Music/\""
 	@echo "  make update XML_FILE=\"my_library.xml\" NEW_PATH=\"/Music/\""
+	@echo "  make update DEBUG=true  # Enable debug logging"
+	@echo "  make dry-run DEBUG=true  # Debug mode with dry-run"
 	@echo "  make install"
 	@echo "  make test"
 
@@ -67,7 +70,7 @@ test: ## Test the installation and verify everything works
 	@echo "$(YELLOW)Testing bash script...$(NC)"
 	@./rekordbox_path_updater.sh > /dev/null 2>&1 && echo "$(GREEN)✓ Bash script works$(NC)" || echo "$(YELLOW)⚠ Bash script requires xmlstarlet$(NC)"
 	@echo "$(YELLOW)Checking for sample XML file...$(NC)"
-	@if [ -f "rekordbox backup.xml" ]; then echo "$(GREEN)✓ Sample XML file found$(NC)"; else echo "$(YELLOW)⚠ No sample XML file found$(NC)"; fi
+	@if [ -f "resources/test_rekordbox.xml" ]; then echo "$(GREEN)✓ Sample XML file found$(NC)"; else echo "$(YELLOW)⚠ No sample XML file found$(NC)"; fi
 	@echo "$(GREEN)All tests passed!$(NC)"
 
 .PHONY: check
@@ -81,9 +84,12 @@ dry-run: ## Run the script in dry-run mode to preview changes
 	@echo "$(YELLOW)XML File: $(XML_FILE)$(NC)"
 	@echo "$(YELLOW)New Path: $(NEW_PATH)$(NC)"
 	@echo "$(YELLOW)Workers: $(WORKERS)$(NC)"
+	@if [ "$(DEBUG)" = "true" ]; then \
+		echo "$(YELLOW)Debug Mode: Enabled$(NC)"; \
+	fi
 	@echo "$(YELLOW)No changes will be made to your files$(NC)"
 	@echo "$(BLUE)--------------------------------------------------$(NC)"
-	@$(PYTHON) rekordbox_path_updater.py "$(XML_FILE)" "$(NEW_PATH)" --dry-run --workers $(WORKERS)
+	@$(PYTHON) rekordbox_path_updater.py "$(XML_FILE)" "$(NEW_PATH)" --dry-run --workers $(WORKERS) $(if $(filter true,$(DEBUG)),--debug,)
 	@echo "$(BLUE)--------------------------------------------------$(NC)"
 	@echo "$(GREEN)Dry-run complete!$(NC)"
 
@@ -93,10 +99,13 @@ update: ## Run the script to actually update the XML file
 	@echo "$(YELLOW)XML File: $(XML_FILE)$(NC)"
 	@echo "$(YELLOW)New Path: $(NEW_PATH)$(NC)"
 	@echo "$(YELLOW)Workers: $(WORKERS)$(NC)"
+	@if [ "$(DEBUG)" = "true" ]; then \
+		echo "$(YELLOW)Debug Mode: Enabled$(NC)"; \
+	fi
 	@echo "$(RED)WARNING: This will modify your XML file!$(NC)"
 	@echo "$(YELLOW)A backup will be created automatically$(NC)"
 	@echo "$(BLUE)--------------------------------------------------$(NC)"
-	@$(PYTHON) rekordbox_path_updater.py "$(XML_FILE)" "$(NEW_PATH)" --workers $(WORKERS)
+	@$(PYTHON) rekordbox_path_updater.py "$(XML_FILE)" "$(NEW_PATH)" --workers $(WORKERS) $(if $(filter true,$(DEBUG)),--debug,)
 	@echo "$(BLUE)--------------------------------------------------$(NC)"
 	@echo "$(GREEN)Update complete!$(NC)"
 
@@ -193,6 +202,33 @@ install-xmlstarlet: ## Install xmlstarlet for bash script support
 		exit 1; \
 	fi
 	@echo "$(GREEN)✓ xmlstarlet installed$(NC)"
+
+.PHONY: debug
+debug: ## Run with debug logging enabled
+	@echo "$(BLUE)Running Rekordbox Path Updater with DEBUG logging...$(NC)"
+	@echo "$(YELLOW)XML File: $(XML_FILE)$(NC)"
+	@echo "$(YELLOW)New Path: $(NEW_PATH)$(NC)"
+	@echo "$(YELLOW)Workers: $(WORKERS)$(NC)"
+	@echo "$(YELLOW)Debug Mode: Enabled$(NC)"
+	@echo "$(RED)WARNING: This will modify your XML file!$(NC)"
+	@echo "$(YELLOW)A backup will be created automatically$(NC)"
+	@echo "$(BLUE)--------------------------------------------------$(NC)"
+	@$(PYTHON) rekordbox_path_updater.py "$(XML_FILE)" "$(NEW_PATH)" --workers $(WORKERS) --debug
+	@echo "$(BLUE)--------------------------------------------------$(NC)"
+	@echo "$(GREEN)Debug update complete!$(NC)"
+
+.PHONY: debug-dry-run
+debug-dry-run: ## Run dry-run with debug logging enabled
+	@echo "$(BLUE)Running Rekordbox Path Updater with DEBUG logging (DRY-RUN)...$(NC)"
+	@echo "$(YELLOW)XML File: $(XML_FILE)$(NC)"
+	@echo "$(YELLOW)New Path: $(NEW_PATH)$(NC)"
+	@echo "$(YELLOW)Workers: $(WORKERS)$(NC)"
+	@echo "$(YELLOW)Debug Mode: Enabled$(NC)"
+	@echo "$(YELLOW)No changes will be made to your files$(NC)"
+	@echo "$(BLUE)--------------------------------------------------$(NC)"
+	@$(PYTHON) rekordbox_path_updater.py "$(XML_FILE)" "$(NEW_PATH)" --dry-run --workers $(WORKERS) --debug
+	@echo "$(BLUE)--------------------------------------------------$(NC)"
+	@echo "$(GREEN)Debug dry-run complete!$(NC)"
 
 .PHONY: compare
 compare: ## Compare original and updated files (if backup exists)
