@@ -61,8 +61,8 @@ def build_new_location(new_root_path, filename):
     if not new_root_path.endswith('/'):
         new_root_path += '/'
     
-    # Build the full path
-    full_path = new_root_path + filename
+    # Build the full path using os.path.join for proper path handling
+    full_path = os.path.join(new_root_path, filename)
     
     # URL encode the path
     encoded_path = urllib.parse.quote(full_path)
@@ -88,8 +88,8 @@ def verify_file_exists(new_root_path, filename):
     if not new_root_path.endswith('/'):
         new_root_path += '/'
     
-    # Build the full path
-    full_path = new_root_path + filename
+    # Build the full path using os.path.join for proper path handling
+    full_path = os.path.join(new_root_path, filename)
     
     # Check if file exists
     return os.path.isfile(full_path)
@@ -136,7 +136,9 @@ def update_rekordbox_xml(xml_file_path, new_root_path, dry_run=False):
                     print(f"✓ Updated: {filename}")
                 else:
                     error_count += 1
-                    error_msg = f"File not found: {new_root_path}{filename}"
+                    # Build the full path for error message using os.path.join
+                    full_path = os.path.join(new_root_path, filename)
+                    error_msg = f"File not found: {full_path}"
                     errors_list.append(error_msg)
                     print(f"✗ Error: {error_msg}")
         

@@ -97,8 +97,8 @@ build_new_location() {
         new_root_path="${new_root_path}/"
     fi
     
-    # Build the full path
-    local full_path="${new_root_path}${filename}"
+    # Build the full path using proper path joining
+    local full_path="${new_root_path%/}/${filename}"
     
     # URL encode the path
     local encoded_path=$(url_encode "$full_path")
@@ -119,8 +119,8 @@ verify_file_exists() {
         new_root_path="${new_root_path}/"
     fi
     
-    # Build the full path
-    local full_path="${new_root_path}${filename}"
+    # Build the full path using proper path joining
+    local full_path="${new_root_path%/}/${filename}"
     
     # Check if file exists
     [[ -f "$full_path" ]]
@@ -174,7 +174,9 @@ update_xml() {
                 print_status "Updated: $filename"
             else
                 ((error_count++))
-                local error_msg="File not found: ${new_root_path}${filename}"
+                # Build the full path for error message using proper path joining
+                local full_path="${new_root_path%/}/${filename}"
+                local error_msg="File not found: ${full_path}"
                 errors+=("$error_msg")
                 print_error "$error_msg"
             fi
