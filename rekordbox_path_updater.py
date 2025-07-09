@@ -75,24 +75,31 @@ def build_new_location(new_root_path, filename):
 
 def verify_file_exists(new_root_path, filename):
     """
-    Verify that a file exists at the new location.
+    Verify that a file exists at the new location, searching all subdirectories.
     
     Args:
         new_root_path (str): The new root path
         filename (str): The filename to check
     
     Returns:
-        bool: True if file exists, False otherwise
+        tuple: (bool, str) - (True if found, path where found) or (False, None)
     """
     # Ensure the new root path ends with a separator
     if not new_root_path.endswith('/'):
         new_root_path += '/'
     
-    # Build the full path using os.path.join for proper path handling
+    # First check the root directory
     full_path = os.path.join(new_root_path, filename)
+    if os.path.isfile(full_path):
+        return True, full_path
     
-    # Check if file exists
-    return os.path.isfile(full_path)
+    # If not found in root, search all subdirectories
+    for root, dirs, files in os.walk(new_root_path):
+        if filename in files:
+            found_path = os.path.join(root, filename)
+            return True, found_path
+    
+    return False, None
 
 
 def update_rekordbox_xml(xml_file_path, new_root_path, dry_run=False):
@@ -127,18 +134,21 @@ def update_rekordbox_xml(xml_file_path, new_root_path, dry_run=False):
                 # Build new location
                 new_location = build_new_location(new_root_path, filename)
                 
-                # Verify file exists at new location
-                if verify_file_exists(new_root_path, filename):
+                # Verify file exists at new location (searches subdirectories)
+                found, found_path = verify_file_exists(new_root_path, filename)
+                if found:
+                    # Build new location with the actual found path
+                    new_location = build_new_location(new_root_path, filename)
                     if not dry_run:
                         # Update the Location attribute
                         track.set('Location', new_location)
                     success_count += 1
-                    print(f"✓ Updated: {filename}")
+                    print(f"✓ Updated: {filename} (found in: {os.path.relpath(found_path, new_root_path)})")
                 else:
                     error_count += 1
                     # Build the full path for error message using os.path.join
                     full_path = os.path.join(new_root_path, filename)
-                    error_msg = f"File not found: {full_path}"
+                    error_msg = f"File not found: {full_path} (searched all subdirectories)"
                     errors_list.append(error_msg)
                     print(f"✗ Error: {error_msg}")
         

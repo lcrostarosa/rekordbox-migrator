@@ -119,11 +119,23 @@ verify_file_exists() {
         new_root_path="${new_root_path}/"
     fi
     
-    # Build the full path using proper path joining
+    # First check the root directory
     local full_path="${new_root_path%/}/${filename}"
+    if [[ -f "$full_path" ]]; then
+        echo "true:$full_path"
+        return 0
+    fi
     
-    # Check if file exists
-    [[ -f "$full_path" ]]
+    # If not found in root, search all subdirectories
+    while IFS= read -r -d '' found_file; do
+        if [[ "$(basename "$found_file")" == "$filename" ]]; then
+            echo "true:$found_file"
+            return 0
+        fi
+    done < <(find "$new_root_path" -type f -print0 2>/dev/null)
+    
+    echo "false:"
+    return 1
 }
 
 # Function to update the XML file
@@ -163,20 +175,28 @@ update_xml() {
             # Build new location
             local new_location=$(build_new_location "$new_root_path" "$filename")
             
-            # Verify file exists at new location
-            if verify_file_exists "$new_root_path" "$filename"; then
+            # Verify file exists at new location (searches subdirectories)
+            local verify_result=$(verify_file_exists "$new_root_path" "$filename")
+            local found=$(echo "$verify_result" | cut -d: -f1)
+            local found_path=$(echo "$verify_result" | cut -d: -f2-)
+            
+            if [[ "$found" == "true" ]]; then
+                # Build new location with the actual found path
+                local new_location=$(build_new_location "$new_root_path" "$filename")
                 if [[ "$dry_run" != "true" ]]; then
                     # Update the Location attribute in the temporary file
                     xmlstarlet ed -u "//TRACK[@Location='$location']/@Location" -v "$new_location" "$temp_file" > "${temp_file}.new" 2>/dev/null
                     mv "${temp_file}.new" "$temp_file"
                 fi
                 ((success_count++))
-                print_status "Updated: $filename"
+                # Show relative path from root directory
+                local relative_path=$(realpath --relative-to="$new_root_path" "$found_path" 2>/dev/null || echo "$filename")
+                print_status "Updated: $filename (found in: $relative_path)"
             else
                 ((error_count++))
                 # Build the full path for error message using proper path joining
                 local full_path="${new_root_path%/}/${filename}"
-                local error_msg="File not found: ${full_path}"
+                local error_msg="File not found: ${full_path} (searched all subdirectories)"
                 errors+=("$error_msg")
                 print_error "$error_msg"
             fi
