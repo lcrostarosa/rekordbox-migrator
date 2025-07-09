@@ -19,6 +19,12 @@ import xml.etree.ElementTree as ET
 import urllib.parse
 from pathlib import Path
 import argparse
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from queue import Queue
+import time
+import logging
+from datetime import datetime
 
 
 def extract_filename_from_location(location_url):
@@ -102,14 +108,140 @@ def verify_file_exists(new_root_path, filename):
     return False, None
 
 
-def update_rekordbox_xml(xml_file_path, new_root_path, dry_run=False):
+def setup_logging(xml_file_path, dry_run=False):
     """
-    Update the Rekordbox XML file with new file paths.
+    Setup logging to both console and file.
+    
+    Args:
+        xml_file_path (str): Path to the XML file being processed
+        dry_run (bool): Whether this is a dry run
+    
+    Returns:
+        logging.Logger: Configured logger
+    """
+    # Create logs directory if it doesn't exist
+    logs_dir = "logs"
+    os.makedirs(logs_dir, exist_ok=True)
+    
+    # Create log filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    xml_basename = os.path.splitext(os.path.basename(xml_file_path))[0]
+    mode = "dry-run" if dry_run else "update"
+    log_filename = f"{logs_dir}/{xml_basename}_{mode}_{timestamp}.log"
+    
+    # Configure logging
+    logger = logging.getLogger(f"rekordbox_updater_{timestamp}")
+    logger.setLevel(logging.INFO)
+    
+    # Create formatters
+    console_formatter = logging.Formatter('%(levelname)s: %(message)s')
+    file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    
+    # Console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(console_formatter)
+    
+    # File handler
+    file_handler = logging.FileHandler(log_filename, encoding='utf-8')
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(file_formatter)
+    
+    # Add handlers
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
+    
+    return logger, log_filename
+
+
+def get_optimal_worker_count(max_workers=None):
+    """
+    Calculate optimal number of worker threads based on system resources.
+    
+    Args:
+        max_workers (int): User-specified worker count
+    
+    Returns:
+        int: Optimal number of worker threads
+    """
+    if max_workers is not None:
+        return max(1, min(max_workers, 64))  # Cap at 64, minimum 1
+    
+    # Get CPU count
+    cpu_count = os.cpu_count() or 1
+    
+    # Get available memory (rough estimate)
+    try:
+        import psutil
+        memory_gb = psutil.virtual_memory().total / (1024**3)
+        # More memory = more threads possible
+        memory_factor = min(2.0, memory_gb / 4.0)  # Cap at 2x for 8GB+
+    except ImportError:
+        memory_factor = 1.0  # Default if psutil not available
+    
+    # Calculate optimal workers
+    # Base: CPU cores
+    # Bonus: 50% more for I/O bound tasks (file system operations)
+    # Memory factor: Adjust based on available RAM
+    optimal_workers = int(cpu_count * 1.5 * memory_factor)
+    
+    # Apply reasonable bounds
+    min_workers = max(2, cpu_count)  # At least 2, or CPU count
+    max_workers = min(32, cpu_count * 4)  # Cap at 4x CPU count, max 32
+    
+    final_workers = max(min_workers, min(optimal_workers, max_workers))
+    
+    return final_workers
+
+
+def verify_files_batch(file_list, new_root_path, max_workers=None):
+    """
+    Verify multiple files using multithreading for better performance.
+    
+    Args:
+        file_list (list): List of (filename, location) tuples
+        new_root_path (str): The new root path
+        max_workers (int): Number of worker threads (auto-calculated if None)
+    
+    Returns:
+        dict: {filename: (found, path)} mapping
+    """
+    optimal_workers = get_optimal_worker_count(max_workers)
+    
+    print(f"Using {optimal_workers} worker threads (CPU cores: {os.cpu_count() or 1})")
+    
+    results = {}
+    
+    def verify_single_file(args):
+        filename, location = args
+        found, found_path = verify_file_exists(new_root_path, filename)
+        return filename, (found, found_path)
+    
+    with ThreadPoolExecutor(max_workers=optimal_workers) as executor:
+        # Submit all verification tasks
+        future_to_filename = {
+            executor.submit(verify_single_file, (filename, location)): filename 
+            for filename, location in file_list
+        }
+        
+        # Collect results as they complete
+        for future in as_completed(future_to_filename):
+            filename, result = future.result()
+            results[filename] = result
+    
+    return results
+
+
+def update_rekordbox_xml(xml_file_path, new_root_path, dry_run=False, max_workers=None, logger=None):
+    """
+    Update the Rekordbox XML file with new file paths using multithreading.
     
     Args:
         xml_file_path (str): Path to the XML file
         new_root_path (str): New root path for files
         dry_run (bool): If True, don't modify the file, just report what would be changed
+        max_workers (int): Number of worker threads for file verification
+        logger: Logger instance for detailed logging
     
     Returns:
         tuple: (success_count, error_count, errors_list)
@@ -123,44 +255,78 @@ def update_rekordbox_xml(xml_file_path, new_root_path, dry_run=False):
         tree = ET.parse(xml_file_path)
         root = tree.getroot()
         
-        # Find all elements with Location attributes
-        # The Location attribute is typically on TRACK elements
+        # Collect all files to verify
+        files_to_verify = []
+        track_locations = {}  # filename -> track element mapping
+        
+        if logger:
+            logger.info("Collecting files to verify...")
+        print("Collecting files to verify...")
+        
         for track in root.findall('.//TRACK'):
             location = track.get('Location')
             if location and location.startswith('file://localhost/'):
-                # Extract filename from current location
                 filename = extract_filename_from_location(location)
-                
-                # Build new location
+                files_to_verify.append((filename, location))
+                track_locations[filename] = track
+        
+        if not files_to_verify:
+            if logger:
+                logger.warning("No files found to verify.")
+            print("No files found to verify.")
+            return 0, 0, []
+        
+        if logger:
+            logger.info(f"Found {len(files_to_verify)} files to verify. Starting multithreaded verification...")
+        print(f"Found {len(files_to_verify)} files to verify. Starting multithreaded verification...")
+        start_time = time.time()
+        
+        # Verify all files using multithreading
+        verification_results = verify_files_batch(files_to_verify, new_root_path, max_workers)
+        
+        verification_time = time.time() - start_time
+        if logger:
+            logger.info(f"File verification completed in {verification_time:.2f} seconds")
+        print(f"File verification completed in {verification_time:.2f} seconds")
+        
+        # Process results and update XML
+        for filename, (found, found_path) in verification_results.items():
+            track = track_locations[filename]
+            
+            if found:
+                # Build new location with the actual found path
                 new_location = build_new_location(new_root_path, filename)
-                
-                # Verify file exists at new location (searches subdirectories)
-                found, found_path = verify_file_exists(new_root_path, filename)
-                if found:
-                    # Build new location with the actual found path
-                    new_location = build_new_location(new_root_path, filename)
-                    if not dry_run:
-                        # Update the Location attribute
-                        track.set('Location', new_location)
-                    success_count += 1
-                    print(f"✓ Updated: {filename} (found in: {os.path.relpath(found_path, new_root_path)})")
-                else:
-                    error_count += 1
-                    # Build the full path for error message using os.path.join
-                    full_path = os.path.join(new_root_path, filename)
-                    error_msg = f"File not found: {full_path} (searched all subdirectories)"
-                    errors_list.append(error_msg)
-                    print(f"✗ Error: {error_msg}")
+                if not dry_run:
+                    # Update the Location attribute
+                    track.set('Location', new_location)
+                success_count += 1
+                relative_path = os.path.relpath(found_path, new_root_path) if found_path != os.path.join(new_root_path, filename) else "root"
+                if logger:
+                    logger.info(f"✓ Updated: {filename} (found in: {relative_path})")
+                print(f"✓ Updated: {filename} (found in: {relative_path})")
+            else:
+                error_count += 1
+                # Build the full path for error message using os.path.join
+                full_path = os.path.join(new_root_path, filename)
+                error_msg = f"File not found: {full_path} (searched all subdirectories)"
+                errors_list.append(error_msg)
+                if logger:
+                    logger.error(f"✗ Error: {error_msg}")
+                print(f"✗ Error: {error_msg}")
         
         # Save the modified XML if not a dry run
         if not dry_run and success_count > 0:
             # Create backup of original file
             backup_path = xml_file_path + '.backup'
             tree.write(backup_path, encoding='utf-8', xml_declaration=True)
+            if logger:
+                logger.info(f"Backup created: {backup_path}")
             print(f"\nBackup created: {backup_path}")
             
             # Write the updated XML
             tree.write(xml_file_path, encoding='utf-8', xml_declaration=True)
+            if logger:
+                logger.info(f"Updated XML file: {xml_file_path}")
             print(f"Updated XML file: {xml_file_path}")
         
         return success_count, error_count, errors_list
@@ -171,6 +337,81 @@ def update_rekordbox_xml(xml_file_path, new_root_path, dry_run=False):
     except Exception as e:
         print(f"Unexpected error: {e}")
         return 0, 0, [f"Unexpected error: {e}"]
+
+
+def generate_summary_report(logger, xml_file_path, new_root_path, success_count, error_count, 
+                          errors_list, total_files, processing_time, dry_run=False):
+    """
+    Generate a comprehensive summary report.
+    
+    Args:
+        logger: Logger instance
+        xml_file_path (str): Path to the XML file
+        new_root_path (str): New root path
+        success_count (int): Number of successful updates
+        error_count (int): Number of errors
+        errors_list (list): List of error details
+        total_files (int): Total number of files processed
+        processing_time (float): Time taken to process
+        dry_run (bool): Whether this was a dry run
+    """
+    mode = "DRY RUN" if dry_run else "UPDATE"
+    
+    # Calculate statistics
+    success_rate = (success_count / total_files * 100) if total_files > 0 else 0
+    error_rate = (error_count / total_files * 100) if total_files > 0 else 0
+    
+    # Log summary header
+    logger.info("=" * 60)
+    logger.info(f"REKORDBOX PATH UPDATER - {mode} SUMMARY")
+    logger.info("=" * 60)
+    
+    # Basic information
+    logger.info(f"XML File: {xml_file_path}")
+    logger.info(f"New Root Path: {new_root_path}")
+    logger.info(f"Processing Time: {processing_time:.2f} seconds")
+    logger.info(f"Mode: {mode}")
+    
+    # Statistics
+    logger.info("")
+    logger.info("STATISTICS:")
+    logger.info(f"  Total Files Processed: {total_files}")
+    logger.info(f"  Successfully Updated: {success_count} ({success_rate:.1f}%)")
+    logger.info(f"  Errors: {error_count} ({error_rate:.1f}%)")
+    
+    # Performance metrics
+    if total_files > 0:
+        files_per_second = total_files / processing_time
+        logger.info(f"  Processing Speed: {files_per_second:.1f} files/second")
+    
+    # Error details
+    if errors_list:
+        logger.info("")
+        logger.info("ERROR DETAILS:")
+        for error in errors_list:
+            logger.error(f"  - {error}")
+    
+    # Recommendations
+    logger.info("")
+    logger.info("RECOMMENDATIONS:")
+    if error_count == 0:
+        logger.info("  ✓ All files were successfully processed!")
+    elif error_count < total_files * 0.1:  # Less than 10% errors
+        logger.info("  ⚠ Some files were not found. Check the error list above.")
+        logger.info("  ✓ Most files were successfully processed.")
+    else:
+        logger.warning("  ✗ Many files were not found. Please check:")
+        logger.warning("    - File paths are correct")
+        logger.warning("    - Files exist at the new location")
+        logger.warning("    - File names match exactly (case-sensitive)")
+    
+    if dry_run:
+        logger.info("")
+        logger.info("DRY RUN COMPLETE:")
+        logger.info("  No changes were made to your XML file.")
+        logger.info("  To apply these changes, run without --dry-run flag.")
+    
+    logger.info("=" * 60)
 
 
 def main():
@@ -186,6 +427,8 @@ def main():
                        help='Show what would be changed without modifying the file')
     parser.add_argument('--no-backup', action='store_true',
                        help='Skip creating a backup of the original file')
+    parser.add_argument('--workers', type=int, default=None,
+                       help='Number of worker threads (default: CPU count + 4)')
     
     args = parser.parse_args()
     
@@ -199,16 +442,41 @@ def main():
         print(f"Error: New root path '{args.new_root_path}' is not a valid directory.")
         sys.exit(1)
     
+    # Setup logging
+    logger, log_filename = setup_logging(args.xml_file, args.dry_run)
+    logger.info(f"Starting Rekordbox Path Updater")
+    logger.info(f"XML File: {args.xml_file}")
+    logger.info(f"New Root Path: {args.new_root_path}")
+    logger.info(f"Dry Run: {args.dry_run}")
+    logger.info(f"Workers: {args.workers}")
+    
     print(f"Processing XML file: {args.xml_file}")
     print(f"New root path: {args.new_root_path}")
     if args.dry_run:
         print("DRY RUN MODE - No changes will be made")
     print("-" * 50)
     
+    # Record start time
+    start_time = time.time()
+    
     # Update the XML file
     success_count, error_count, errors_list = update_rekordbox_xml(
-        args.xml_file, args.new_root_path, args.dry_run
+        args.xml_file, args.new_root_path, args.dry_run, args.workers, logger
     )
+    
+    # Calculate processing time
+    processing_time = time.time() - start_time
+    total_files = success_count + error_count
+    
+    # Generate comprehensive summary
+    generate_summary_report(
+        logger, args.xml_file, args.new_root_path, 
+        success_count, error_count, errors_list, 
+        total_files, processing_time, args.dry_run
+    )
+    
+    # Print log file location
+    print(f"\nDetailed log saved to: {log_filename}")
     
     # Print summary
     print("-" * 50)

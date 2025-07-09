@@ -4,6 +4,7 @@
 # Default values
 XML_FILE ?= "rekordbox backup.xml"
 NEW_PATH ?= "/Volumes/External/Music/"
+WORKERS ?= 8
 PYTHON ?= python3
 PIP ?= pip3
 
@@ -79,9 +80,10 @@ dry-run: ## Run the script in dry-run mode to preview changes
 	@echo "$(BLUE)Running Rekordbox Path Updater in DRY-RUN mode...$(NC)"
 	@echo "$(YELLOW)XML File: $(XML_FILE)$(NC)"
 	@echo "$(YELLOW)New Path: $(NEW_PATH)$(NC)"
+	@echo "$(YELLOW)Workers: $(WORKERS)$(NC)"
 	@echo "$(YELLOW)No changes will be made to your files$(NC)"
 	@echo "$(BLUE)--------------------------------------------------$(NC)"
-	@$(PYTHON) rekordbox_path_updater.py "$(XML_FILE)" "$(NEW_PATH)" --dry-run
+	@$(PYTHON) rekordbox_path_updater.py "$(XML_FILE)" "$(NEW_PATH)" --dry-run --workers $(WORKERS)
 	@echo "$(BLUE)--------------------------------------------------$(NC)"
 	@echo "$(GREEN)Dry-run complete!$(NC)"
 
@@ -90,10 +92,11 @@ update: ## Run the script to actually update the XML file
 	@echo "$(BLUE)Running Rekordbox Path Updater...$(NC)"
 	@echo "$(YELLOW)XML File: $(XML_FILE)$(NC)"
 	@echo "$(YELLOW)New Path: $(NEW_PATH)$(NC)"
+	@echo "$(YELLOW)Workers: $(WORKERS)$(NC)"
 	@echo "$(RED)WARNING: This will modify your XML file!$(NC)"
 	@echo "$(YELLOW)A backup will be created automatically$(NC)"
 	@echo "$(BLUE)--------------------------------------------------$(NC)"
-	@$(PYTHON) rekordbox_path_updater.py "$(XML_FILE)" "$(NEW_PATH)"
+	@$(PYTHON) rekordbox_path_updater.py "$(XML_FILE)" "$(NEW_PATH)" --workers $(WORKERS)
 	@echo "$(BLUE)--------------------------------------------------$(NC)"
 	@echo "$(GREEN)Update complete!$(NC)"
 
@@ -156,8 +159,8 @@ info: ## Show information about the current setup
 clean: ## Clean up temporary files and backups
 	@echo "$(BLUE)Cleaning up...$(NC)"
 	@rm -f *.tmp *.temp *.bak 2>/dev/null || true
-	@echo "$(YELLOW)Warning: This will remove backup files!$(NC)"
-	@read -p "Remove backup files? (y/N): " confirm && [ "$$confirm" = "y" ] && rm -f *.backup && echo "$(GREEN)✓ Backups removed$(NC)" || echo "$(YELLOW)Backups preserved$(NC)"
+	@echo "$(YELLOW)Warning: This will remove backup files and logs!$(NC)"
+	@read -p "Remove backup files and logs? (y/N): " confirm && [ "$$confirm" = "y" ] && rm -f *.backup && rm -rf logs && echo "$(GREEN)✓ Backups and logs removed$(NC)" || echo "$(YELLOW)Backups and logs preserved$(NC)"
 	@echo "$(GREEN)Cleanup complete!$(NC)"
 
 .PHONY: backup
@@ -234,7 +237,7 @@ docs: ## Generate documentation
 default: help 
 
 .PHONY: deps
-deps: ## Install all dependencies (Homebrew, Python, xmlstarlet)
+deps: ## Install all dependencies (Homebrew, Python, xmlstarlet, psutil)
 	@echo "$(BLUE)Checking Homebrew...$(NC)"
 	@if ! command -v brew >/dev/null 2>&1; then \
 		echo "$(YELLOW)Homebrew not found. Installing Homebrew...$(NC)"; \
@@ -256,4 +259,6 @@ deps: ## Install all dependencies (Homebrew, Python, xmlstarlet)
 	else \
 		echo "$(GREEN)✓ xmlstarlet found$(NC)"; \
 	fi
+	@echo "$(BLUE)Installing Python dependencies...$(NC)"
+	@$(PYTHON) -m pip install --user psutil || echo "$(YELLOW)psutil installation failed (optional for better performance)$(NC)"
 	@echo "$(GREEN)All dependencies installed!$(NC)" 

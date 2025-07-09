@@ -396,6 +396,121 @@ cp "rekordbox.xml.backup" "rekordbox.xml"
 make restore
 ```
 
+## 🚀 Performance Features
+
+### Smart Multithreading
+Both scripts automatically calculate the optimal number of worker threads based on your system resources:
+
+**Automatic Thread Calculation:**
+- **CPU Cores**: Base calculation on available CPU cores
+- **Memory Factor**: Adjusts based on available RAM (more RAM = more threads possible)
+- **I/O Optimization**: Adds 50% more threads for file system operations
+- **Smart Bounds**: Minimum 2 threads, maximum 32 threads or 4x CPU cores
+
+**Python Script:**
+```bash
+# Let the script choose optimal thread count (recommended)
+python3 rekordbox_path_updater.py "rekordbox backup.xml" "/new/path/"
+
+# Override with custom thread count
+python3 rekordbox_path_updater.py "rekordbox backup.xml" "/new/path/" --workers 16
+```
+
+**Bash Script:**
+```bash
+# Let the script choose optimal thread count (recommended)
+./rekordbox_path_updater.sh "rekordbox backup.xml" "/new/path/"
+
+# Override with custom thread count
+./rekordbox_path_updater.sh "rekordbox backup.xml" "/new/path/" 8
+```
+
+**Makefile:**
+```bash
+# Let the script choose optimal thread count (recommended)
+make update XML_FILE="rekordbox backup.xml" NEW_PATH="/new/path/"
+
+# Override with custom worker count
+make update XML_FILE="rekordbox backup.xml" NEW_PATH="/new/path/" WORKERS=16
+```
+
+**System Requirements for Optimal Performance:**
+- **psutil** (optional): For better memory detection in Python script
+- **bc** (optional): For better calculations in bash script
+- **nproc/sysctl**: For CPU core detection
+
+### Performance Tips
+- **Large Libraries**: For libraries with 10,000+ tracks, the smart threading can provide 3-5x speed improvement
+- **SSD vs HDD**: Performance gains are more noticeable on slower storage
+- **Memory**: More RAM allows for more concurrent file operations
+- **Network Drives**: Consider using fewer threads for network-mounted storage
+
+## 📊 Logging and Reporting
+
+### Comprehensive Logging
+Both scripts now provide detailed logging to help you track and troubleshoot:
+
+**Log Files:**
+- **Location**: `logs/` directory (created automatically)
+- **Naming**: `{xml_filename}_{mode}_{timestamp}.log`
+- **Example**: `rekordbox_backup_dry-run_20241201_143022.log`
+
+**Log Contents:**
+- Detailed processing steps
+- File verification results
+- Error messages with full paths
+- Performance metrics
+- Processing time and statistics
+
+### Summary Reports
+Each run generates a comprehensive summary including:
+
+**Statistics:**
+- Total files processed
+- Success/error counts and percentages
+- Processing speed (files/second)
+- Processing time
+
+**Error Details:**
+- Complete list of missing files
+- Full file paths that were searched
+- Recommendations for troubleshooting
+
+**Recommendations:**
+- Success rate analysis
+- Suggestions for improving results
+- Next steps for dry runs
+
+### Example Log Output
+```
+============================================================
+REKORDBOX PATH UPDATER - DRY RUN SUMMARY
+============================================================
+XML File: rekordbox backup.xml
+New Root Path: /Volumes/External/Music/
+Processing Time: 2.34 seconds
+Mode: DRY RUN
+
+STATISTICS:
+  Total Files Processed: 1,247
+  Successfully Updated: 1,198 (96.1%)
+  Errors: 49 (3.9%)
+  Processing Speed: 532.5 files/second
+
+ERROR DETAILS:
+  - File not found: /Volumes/External/Music/Missing Song.mp3
+  - File not found: /Volumes/External/Music/Another Missing.mp3
+
+RECOMMENDATIONS:
+  ⚠ Some files were not found. Check the error list above.
+  ✓ Most files were successfully processed.
+
+DRY RUN COMPLETE:
+  No changes were made to your XML file.
+  To apply these changes, run without --dry-run flag.
+============================================================
+```
+
 ## 📝 License
 
 This tool is provided as-is for educational and personal use. Always your Rekordbox library before making changes.
